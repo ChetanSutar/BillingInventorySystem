@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using BillingInventorySystem.Data;
 using BillingInventorySystem.Models;
+using BillingInventorySystem.ViewModel;
 
 namespace BillingInventorySystem.Controllers
 {
@@ -46,28 +47,62 @@ namespace BillingInventorySystem.Controllers
         }
 
         // GET: Invoices/Create
+        [HttpGet]
         public IActionResult Create()
         {
-            ViewData["CustomerId"] = new SelectList(_context.Customers, "Id", "FullName");
-            return View();
+            var viewModel = new InvoiceFormViewModel
+            {
+                Customers = _context.Customers.ToList(),
+                Products = _context.Products.ToList(),
+                Items = new List<InvoiceItemViewModel> { new InvoiceItemViewModel() } // Start with one row
+            };
+            return View(viewModel);
         }
+
+        //[HttpPost]
+        //[ValidateAntiForgeryToken]
+        //public IActionResult Create(InvoiceFormViewModel model)
+        //{
+        //    if (!ModelState.IsValid)
+        //    {
+        //        model.Customers = _context.Customers.ToList();
+        //        model.Products = _context.Products.ToList();
+        //        return View(model);
+        //    }
+
+        //    var invoice = new Invoice
+        //    {
+        //        CustomerId = model.CustomerId,
+        //        Date = model.Date,
+        //        Items = model.Items.Select(i => new InvoiceItem
+        //        {
+        //            ProductId = i.ProductId,
+        //            Quantity = i.Quantity,
+        //            TotalPrice = _context.Products.Find(i.ProductId).UnitPrice * i.Quantity
+        //        }).ToList()
+        //    };
+
+        //    _context.Invoices.Add(invoice);
+        //    _context.SaveChanges();
+        //    return RedirectToAction(nameof(Index));
+        //}
 
         // POST: Invoices/Create
         // To protect from overposting attacks, enable the specific properties you want to bind to.
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("Id,Date,CustomerId")] Invoice invoice)
-        {
-            if (ModelState.IsValid)
-            {
-                _context.Add(invoice);
-                await _context.SaveChangesAsync();
-                return RedirectToAction(nameof(Index));
-            }
-            ViewData["CustomerId"] = new SelectList(_context.Customers, "Id", "FullName", invoice.CustomerId);
-            return View(invoice);
-        }
+        //[HttpPost]
+        //[ValidateAntiForgeryToken]
+        //public async Task<IActionResult> Create([Bind("Id,Date,CustomerId")] Invoice invoice)
+        //{
+        //    if (ModelState.IsValid)
+        //    {
+        //        _context.Add(invoice);
+        //        await _context.SaveChangesAsync();
+        //        return RedirectToAction(nameof(Index));
+        //    }
+        //    ViewData["CustomerId"] = new SelectList(_context.Customers, "Id", "FullName", invoice.CustomerId);
+        //    return View(invoice);
+        //}
 
         // GET: Invoices/Edit/5
         public async Task<IActionResult> Edit(int? id)
@@ -91,36 +126,59 @@ namespace BillingInventorySystem.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(int id, [Bind("Id,Date,CustomerId")] Invoice invoice)
+        public IActionResult Create(InvoiceFormViewModel model)
         {
-            if (id != invoice.Id)
+            if (!ModelState.IsValid)
             {
-                return NotFound();
+                // Repopulate dropdowns before returning view
+                model.Customers = _context.Customers.ToList();
+                model.Products = _context.Products.ToList();
+                return View(model);
             }
 
-            if (ModelState.IsValid)
+            try
             {
-                try
+                // Create Invoice
+                var invoice = new Invoice
                 {
-                    _context.Update(invoice);
-                    await _context.SaveChangesAsync();
-                }
-                catch (DbUpdateConcurrencyException)
+                    CustomerId = model.CustomerId,
+                    Date = model.Date,
+                    Items = new List<InvoiceItem>()
+                };
+
+                // Create InvoiceItems
+                foreach (var item in model.Items)
                 {
-                    if (!InvoiceExists(invoice.Id))
+                    var product = _context.Products.FirstOrDefault(p => p.Id == item.ProductId);
+                    if (product == null)
+                        continue;
+
+                    var invoiceItem = new InvoiceItem
                     {
-                        return NotFound();
-                    }
-                    else
-                    {
-                        throw;
-                    }
+                        ProductId = item.ProductId,
+                        Quantity = item.Quantity,
+                        TotalPrice = product.UnitPrice * item.Quantity
+                    };
+
+                    invoice.Items.Add(invoiceItem);
                 }
+
+                // Save to DB
+                _context.Invoices.Add(invoice);
+                _context.SaveChanges();
+
                 return RedirectToAction(nameof(Index));
             }
-            ViewData["CustomerId"] = new SelectList(_context.Customers, "Id", "FullName", invoice.CustomerId);
-            return View(invoice);
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error saving invoice: " + ex.Message);
+                ModelState.AddModelError("", "An error occurred while saving the invoice.");
+                model.Customers = _context.Customers.ToList();
+                model.Products = _context.Products.ToList();
+                return View(model);
+            }
         }
+
 
         // GET: Invoices/Delete/5
         public async Task<IActionResult> Delete(int? id)
